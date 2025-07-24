@@ -1,0 +1,78 @@
+import requests
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+refresh_token = os.getenv('QUESTRADE_REFRESH_TOKEN')
+
+# Authenticate with Questrade API
+def authenticate():
+    url = f'https://login.questrade.com/oauth2/token?grant_type=refresh_token&refresh_token={refresh_token}'
+    response = requests.get(url)
+    response.raise_for_status()
+    auth_data = response.json()
+    return auth_data
+
+auth_data = authenticate()
+
+access_token = auth_data['access_token']
+api_server = auth_data['api_server']
+
+headers = {'Authorization': f'Bearer {access_token}'}
+
+# Get account info
+def get_account_id():
+    url = f'{api_server}v1/accounts'
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    accounts = response.json()['accounts']
+    # Choose the first margin account (type: "Margin")
+    for account in accounts:
+        if account['type'] == "Margin":
+            return account['number']
+    raise Exception("Margin account not found.")
+
+account_id = get_account_id()
+
+# Submit a limit buy order
+def submit_buy_order(symbol, quantity, limit_price):
+    url = f'{api_server}v1/accounts/{account_id}/orders'
+    order_data = {
+        "symbolId": get_symbol_id(symbol),
+        "quantity": quantity,
+        "limitPrice": limit_price,
+        "isAllOrNone": False,
+        "isAnonymous": False,
+        "orderType": "Limit",
+        "timeInForce": "Day",
+        "action": "Buy",
+        "primaryRoute": "AUTO"
+    }
+    response = requests.post(url, json=order_data, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+# Get Symbol ID
+def get_symbol_id(symbol):
+    url = f'{api_server}v1/symbols/search?prefix={symbol}'
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    symbols = response.json()['symbols']
+    for s in symbols:
+        if s['symbol'] == symbol:
+            return s['symbolId']
+    raise Exception("Symbol ID not found.")
+
+# Example Usage
+if __name__ == "__main__":
+    try:
+        symbol = "AAPL"  # Example stock
+        quantity = 10
+        limit_price = 150.00
+
+        order_response = submit_buy_order(symbol, quantity, limit_price)
+        print(f"Order submitted successfully: {order_response}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
